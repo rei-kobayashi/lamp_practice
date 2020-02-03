@@ -156,4 +156,15 @@ function validate_cart_purchase($carts){
   }
   return true;
 }
-
+function add_histories($db, $user_id, $total){
+  $sql = "
+    INSERT INTO histories(user_id,total) VALUES(?,?)
+  ";
+  return execute_query($db, $sql,array($user_id,$total));
+}
+function add_details($db,$order_id,$cart){
+  $sql = "
+    INSERT INTO details VALUES(?,?,?,?)
+  ";
+  return execute_query($db, $sql,array($order_id,$cart['item_id'],$cart['price'],$cart['amount']));
+}
