@@ -83,10 +83,10 @@ function update_cart_amount($db, $cart_id, $amount){
     SET
       amount = {$amount}
     WHERE
-      cart_id = {$cart_id}
+      cart_id = ?
     LIMIT 1
   ";
-  return execute_query($db, $sql);
+  return execute_query($db, $sql,array($cart_id));
 }
 
 function delete_cart($db, $cart_id){
@@ -94,11 +94,11 @@ function delete_cart($db, $cart_id){
     DELETE FROM
       carts
     WHERE
-      cart_id = {$cart_id}
+      cart_id = ?
     LIMIT 1
   ";
 
-  return execute_query($db, $sql);
+  return execute_query($db, $sql,array($cart_id));
 }
 
 function purchase_carts($db, $carts){
@@ -123,10 +123,10 @@ function delete_user_carts($db, $user_id){
     DELETE FROM
       carts
     WHERE
-      user_id = {$user_id}
+      user_id = ?
   ";
 
-  execute_query($db, $sql);
+  execute_query($db, $sql,array($user_id));
 }
 
 
@@ -156,4 +156,15 @@ function validate_cart_purchase($carts){
   }
   return true;
 }
-
+function add_histories($db, $user_id, $total){
+  $sql = "
+    INSERT INTO histories(user_id,total) VALUES(?,?)
+  ";
+  return execute_query($db, $sql,array($user_id,$total));
+}
+function add_details($db,$order_id,$cart){
+  $sql = "
+    INSERT INTO details VALUES(?,?,?,?)
+  ";
+  return execute_query($db, $sql,array($order_id,$cart['item_id'],$cart['price'],$cart['amount']));
+}
