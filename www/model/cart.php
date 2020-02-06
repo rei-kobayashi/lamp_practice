@@ -83,10 +83,10 @@ function update_cart_amount($db, $cart_id, $amount){
     SET
       amount = {$amount}
     WHERE
-      cart_id = {$cart_id}
+      cart_id = ?
     LIMIT 1
   ";
-  return execute_query($db, $sql);
+  return execute_query($db, $sql,array($cart_id));
 }
 
 function delete_cart($db, $cart_id){
