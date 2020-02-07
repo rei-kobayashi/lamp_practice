@@ -101,10 +101,14 @@ function delete_cart($db, $cart_id){
   return execute_query($db, $sql);
 }
 
-function purchase_carts($db, $carts){
+function purchase_carts($db, $carts,$user_id,$total){
   if(validate_cart_purchase($carts) === false){
     return false;
   }
+  //トランザクション開始
+  $db->beginTransaction();
+  try {
+  //商品購入処理。購入できないときはエラーメッセージ
   foreach($carts as $cart){
     if(update_item_stock(
         $db, 
@@ -112,10 +116,19 @@ function purchase_carts($db, $carts){
         $cart['stock'] - $cart['amount']
       ) === false){
       set_error($cart['name'] . 'の購入に失敗しました。');
-    }
+      }
   }
-  
-  delete_user_carts($db, $carts[0]['user_id']);
+  //履歴と明細作成処理を呼び出す
+  create_result($db,$carts,$user_id,$total);
+  //コミット
+  $db->commit();
+  print'データ登録ができました。';
+  } catch (PDOException $e) {
+     // ロールバック処理
+     $db->rollback();
+     // 例外をスロー
+     throw $e;
+  } print 'データベース処理でエラーが発生しました。理由：'.$e->getMessage();
 }
 
 function delete_user_carts($db, $user_id){
@@ -157,3 +170,37 @@ function validate_cart_purchase($carts){
   return true;
 }
 
+function create_result($db,$carts,$user_id,$total){
+  //合計金額を計算 
+  $total = 0;
+   //foreach
+  foreach($carts as $cart){
+    $total += $cart['price'] * $cart['amount'];
+  
+  //add_historiesを呼び出す  履歴のテーブルに情報を入れる処理 order_idないのにどうやって取得するの？
+  add_histories($db,$user_id,$total);
+  if(add_histories(
+      $db,
+      $user_id,
+      $total
+      ) === TRUE ) {
+      //order_idを取得
+      $order_id = $db->lastInsertId();
+      //cartsをループさせてadd_detailsを呼び出す　詳細テーブルに情報を入れる
+      foreach($carts as $cart){
+        add_details($db,$order_id,$cart['item_id'],$cart['price'],$cart['amount']);
+      }
+  }
+}
+function add_histories($db, $user_id, $total){
+  $sql = "
+    INSERT INTO histories(user_id,total) VALUES(?,?)
+  ";
+  return execute_query($db, $sql,array($user_id,$total));
+}
+function add_details($db,$order_id,$cart){
+  $sql = "
+    INSERT INTO details VALUES(?,?,?,?)
+  ";
+  return execute_query($db, $sql,array($order_id,$cart['item_id'],$cart['price'],$cart['amount']));
+}
