@@ -179,7 +179,6 @@ function validate_cart_purchase($carts)
   }
   return true;
 }
-
 function create_result($db, $carts)
 {
   //合計金額を計算 
