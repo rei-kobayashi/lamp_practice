@@ -56,3 +56,28 @@ function get_history($db, $order_id)
     
     return fetch_query($db, $sql, [$order_id]);
 }
+function get_ranking($db){
+    $sql = "
+    SELECT
+        items.name,
+        items.price,
+        items.image,
+        sum(details.amount) AS amount
+    FROM
+        items
+    JOIN
+        details
+    ON
+        items.item_id = details.item_id
+    WHERE
+        status = 1
+    GROUP BY
+        items.name,
+        items.price,
+        items.image
+    ORDER BY
+        amount DESC
+    LIMIT
+        3";
+    return fetch_all_query($db,$sql);
+}
