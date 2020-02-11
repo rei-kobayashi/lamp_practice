@@ -22,9 +22,9 @@ function get_user_carts($db, $user_id)
     ON
       carts.item_id = items.item_id
     WHERE
-      carts.user_id = {$user_id}
+      carts.user_id = ?
   ";
-  return fetch_all_query($db, $sql);
+  return fetch_all_query($db, $sql,array($user_id));
 }
 
 function get_user_cart($db, $user_id, $item_id)
@@ -47,12 +47,12 @@ function get_user_cart($db, $user_id, $item_id)
     ON
       carts.item_id = items.item_id
     WHERE
-      carts.user_id = {$user_id}
+      carts.user_id = ?
     AND
-      items.item_id = {$item_id}
+      items.item_id = ?
   ";
 
-  return fetch_query($db, $sql);
+  return fetch_query($db, $sql,array($user_id,$item_id));
 }
 
 function add_cart($db, $user_id, $item_id)
@@ -87,10 +87,10 @@ function update_cart_amount($db, $cart_id, $amount)
     SET
       amount = {$amount}
     WHERE
-      cart_id = {$cart_id}
+      cart_id = ?
     LIMIT 1
   ";
-  return execute_query($db, $sql);
+  return execute_query($db, $sql,array($cart_id));
 }
 
 function delete_cart($db, $cart_id)
@@ -99,11 +99,11 @@ function delete_cart($db, $cart_id)
     DELETE FROM
       carts
     WHERE
-      cart_id = {$cart_id}
+      cart_id = ?
     LIMIT 1
   ";
 
-  return execute_query($db, $sql);
+  return execute_query($db, $sql,array($cart_id));
 }
 
 function purchase_carts($db, $carts)
@@ -126,6 +126,7 @@ function purchase_carts($db, $carts)
   }
   //履歴と明細作成処理を呼び出す
   create_result($db, $carts);
+  delete_user_carts($db,$carts[0]['user_id']);
   if (!has_error()) {
     //コミット
     $db->commit();
@@ -143,10 +144,10 @@ function delete_user_carts($db, $user_id)
     DELETE FROM
       carts
     WHERE
-      user_id = {$user_id}
+      user_id = ?
   ";
 
-  execute_query($db, $sql);
+  execute_query($db, $sql,array($user_id));
 }
 
 
@@ -198,7 +199,7 @@ function create_result($db, $carts)
     $order_id = $db->lastInsertId();
     //cartsをループさせてadd_detailsを呼び出す　詳細テーブルに情報を入れる
     foreach ($carts as $cart) {
-      if (add_details($db, $order_id, $cart['item_id'], $cart['price'], $cart['amount']) === FALSE) {
+      if (add_details($db, $order_id, $cart) === FALSE) {
         set_error(h($cart['name']) . 'の購入明細の追加に失敗しました。');
       }
     }
@@ -206,13 +207,15 @@ function create_result($db, $carts)
     set_error('購入履歴の追加に失敗しました。');
   }
 }
+//購入ボタンが押された時、historiesテーブルに情報を格納する
 function add_histories($db, $user_id, $total)
 {
   $sql = "
-    INSERT INTO histories(user_id,total) VALUES(?,?)
+    INSERT INTO histories(user_id,total,purchase_date) VALUES(?,?,now())
   ";
   return execute_query($db, $sql, array($user_id, $total));
 }
+//購入ボタンが押された時、ditailsテーブルに情報を格納する
 function add_details($db, $order_id, $cart)
 {
   $sql = "
