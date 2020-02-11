@@ -1,8 +1,9 @@
-<?php 
+<?php
 require_once MODEL_PATH . 'functions.php';
 require_once MODEL_PATH . 'db.php';
 
-function get_user_carts($db, $user_id){
+function get_user_carts($db, $user_id)
+{
   $sql = "
     SELECT
       items.item_id,
@@ -26,7 +27,8 @@ function get_user_carts($db, $user_id){
   return fetch_all_query($db, $sql,array($user_id));
 }
 
-function get_user_cart($db, $user_id, $item_id){
+function get_user_cart($db, $user_id, $item_id)
+{
   $sql = "
     SELECT
       items.item_id,
@@ -51,18 +53,19 @@ function get_user_cart($db, $user_id, $item_id){
   ";
 
   return fetch_query($db, $sql,array($user_id,$item_id));
-
 }
 
-function add_cart($db, $user_id, $item_id ) {
+function add_cart($db, $user_id, $item_id)
+{
   $cart = get_user_cart($db, $user_id, $item_id);
-  if($cart === false){
+  if ($cart === false) {
     return insert_cart($db, $user_id, $item_id);
   }
   return update_cart_amount($db, $cart['cart_id'], $cart['amount'] + 1);
 }
 
-function insert_cart($db, $user_id, $item_id, $amount = 1){
+function insert_cart($db, $user_id, $item_id, $amount = 1)
+{
   $sql = "
     INSERT INTO
       carts(
@@ -76,7 +79,8 @@ function insert_cart($db, $user_id, $item_id, $amount = 1){
   return execute_query($db, $sql);
 }
 
-function update_cart_amount($db, $cart_id, $amount){
+function update_cart_amount($db, $cart_id, $amount)
+{
   $sql = "
     UPDATE
       carts
@@ -89,7 +93,8 @@ function update_cart_amount($db, $cart_id, $amount){
   return execute_query($db, $sql,array($cart_id));
 }
 
-function delete_cart($db, $cart_id){
+function delete_cart($db, $cart_id)
+{
   $sql = "
     DELETE FROM
       carts
@@ -101,24 +106,40 @@ function delete_cart($db, $cart_id){
   return execute_query($db, $sql,array($cart_id));
 }
 
-function purchase_carts($db, $carts){
-  if(validate_cart_purchase($carts) === false){
+function purchase_carts($db, $carts)
+{
+  if (validate_cart_purchase($carts) === false) {
     return false;
   }
-  foreach($carts as $cart){
-    if(update_item_stock(
-        $db, 
-        $cart['item_id'], 
-        $cart['stock'] - $cart['amount']
-      ) === false){
-      set_error($cart['name'] . 'の購入に失敗しました。');
+  //トランザクション開始
+  $db->beginTransaction();
+
+  //商品購入処理。購入できないときはエラーメッセージ
+  foreach ($carts as $cart) {
+    if (update_item_stock(
+      $db,
+      $cart['item_id'],
+      $cart['stock'] - $cart['amount']
+    ) === false) {
+      set_error(h($cart['name']) . 'の購入に失敗しました。');
     }
   }
-  
-  delete_user_carts($db, $carts[0]['user_id']);
+  //履歴と明細作成処理を呼び出す
+  create_result($db, $carts);
+  delete_user_carts($db,$carts[0]['user_id']);
+  if (!has_error()) {
+    //コミット
+    $db->commit();
+    return true;
+  } else {
+    // ロールバック処理
+    $db->rollback();
+    return false;
+  }
 }
 
-function delete_user_carts($db, $user_id){
+function delete_user_carts($db, $user_id)
+{
   $sql = "
     DELETE FROM
       carts
@@ -130,41 +151,74 @@ function delete_user_carts($db, $user_id){
 }
 
 
-function sum_carts($carts){
+function sum_carts($carts)
+{
   $total_price = 0;
-  foreach($carts as $cart){
+  foreach ($carts as $cart) {
     $total_price += $cart['price'] * $cart['amount'];
   }
   return $total_price;
 }
 
-function validate_cart_purchase($carts){
-  if(count($carts) === 0){
+function validate_cart_purchase($carts)
+{
+  if (count($carts) === 0) {
     set_error('カートに商品が入っていません。');
     return false;
   }
-  foreach($carts as $cart){
-    if(is_open($cart) === false){
-      set_error($cart['name'] . 'は現在購入できません。');
+  foreach ($carts as $cart) {
+    if (is_open($cart) === false) {
+      set_error(h($cart['name']) . 'は現在購入できません。');
     }
-    if($cart['stock'] - $cart['amount'] < 0){
-      set_error($cart['name'] . 'は在庫が足りません。購入可能数:' . $cart['stock']);
+    if ($cart['stock'] - $cart['amount'] < 0) {
+      set_error(h($cart['name']) . 'は在庫が足りません。購入可能数:' . $cart['stock']);
     }
   }
-  if(has_error() === true){
+  if (has_error() === true) {
     return false;
   }
   return true;
 }
-function add_histories($db, $user_id, $total){
-  $sql = "
-    INSERT INTO histories(user_id,total) VALUES(?,?)
-  ";
-  return execute_query($db, $sql,array($user_id,$total));
+function create_result($db, $carts)
+{
+  //合計金額を計算 
+  $total = 0;
+  //foreach
+  foreach ($carts as $cart) {
+    $total += $cart['price'] * $cart['amount'];
+  }
+  $user_id = $carts[0]['user_id'];
+  //add_historiesを呼び出す  履歴のテーブルに情報を入れる処理 order_idないのにどうやって取得するの？
+  if (add_histories(
+    $db,
+    $user_id,
+    $total
+  ) === TRUE) {
+    //order_idを取得
+    $order_id = $db->lastInsertId();
+    //cartsをループさせてadd_detailsを呼び出す　詳細テーブルに情報を入れる
+    foreach ($carts as $cart) {
+      if (add_details($db, $order_id, $cart) === FALSE) {
+        set_error(h($cart['name']) . 'の購入明細の追加に失敗しました。');
+      }
+    }
+  } else {
+    set_error('購入履歴の追加に失敗しました。');
+  }
 }
-function add_details($db,$order_id,$cart){
+//購入ボタンが押された時、historiesテーブルに情報を格納する
+function add_histories($db, $user_id, $total)
+{
+  $sql = "
+    INSERT INTO histories(user_id,total,purchase_date) VALUES(?,?,now())
+  ";
+  return execute_query($db, $sql, array($user_id, $total));
+}
+//購入ボタンが押された時、ditailsテーブルに情報を格納する
+function add_details($db, $order_id, $cart)
+{
   $sql = "
     INSERT INTO details VALUES(?,?,?,?)
   ";
-  return execute_query($db, $sql,array($order_id,$cart['item_id'],$cart['price'],$cart['amount']));
+  return execute_query($db, $sql, array($order_id, $cart['item_id'], $cart['price'], $cart['amount']));
 }
